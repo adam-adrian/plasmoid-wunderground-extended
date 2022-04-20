@@ -21,14 +21,30 @@ import QtQuick.Layouts 1.0
 import QtQuick.Controls 2.0
 import org.kde.plasma.plasmoid 2.0
 import org.kde.plasma.core 2.0 as PlasmaCore
+import org.kde.plasma.networkmanagement 0.2 as PlasmaNM
+
 import "../code/utils.js" as Utils
-import "../code/pws-api.js" as StationAPI
+import "../code/pws-api.js" as API
 
 Item {
     id: root
 
     //that's a hack to check if we have a translation file for the given Locale
     property string currentLocale: getDisplayLocale()
+
+    property var currentLocation: null
+    
+    //todo refresh locations? how?
+    property var locations: ({
+        home: {
+            lat: plasmoid.configuration.latitude,
+            long: plasmoid.configuration.longitude,
+            station: plasmoid.configuration.stationID
+        },
+        traveling: null
+    })
+
+    property bool isNarrativeForDay: true
 
     property var weatherData: null
     property var flatWeatherData: {}
@@ -231,8 +247,6 @@ Item {
     property int unitsChoice: plasmoid.configuration.unitsChoice
 
     property bool inTray: false
-    // Metric units change based on precipitation type
-    property bool isRain: true
 
     property Component fr: FullRepresentation {
         Layout.minimumWidth: units.gridUnit * 16 *2.6
@@ -243,20 +257,12 @@ Item {
 
     property Component cr: CompactRepresentation {}
 
-    function printDebug(msg) {
-        if (plasmoid.configuration.logConsole) {console.log("[debug] [main.qml] " + msg)}
-    }
-
-    function printDebugJSON(json) {
-        if (plasmoid.configuration.logConsole) {console.log("[debug] [main.qml] " + JSON.stringify(json))}
-    }
-
     function updateWeatherData() {
         printDebug("Getting new weather data")
 
-        StationAPI.getCurrentData()
-        StationAPI.getForecastData("daily", 7);
-        StationAPI.getForecastData("hourly", 24);
+        API.getCurrentData()
+        API.getForecastData("daily", 7);
+        API.getForecastData("hourly", 24);
 
         updatetoolTipSubText()
     }
@@ -264,7 +270,7 @@ Item {
     function updateCurrentData() {
         printDebug("Getting new current data")
 
-        StationAPI.getCurrentData()
+        API.getCurrentData()
 
         updatetoolTipSubText()
     }
@@ -272,8 +278,8 @@ Item {
     function updateForecastData() {
         printDebug("Getting new forecast data")
 
-        StationAPI.getForecastData("daily", 7);
-        StationAPI.getForecastData("hourly", 24);
+        API.getForecastData("daily", 7);
+        API.getForecastData("hourly", 24);
 
         updatetoolTipSubText()
 
@@ -288,6 +294,40 @@ Item {
         //todo 
 
         toolTipSubText = subText;
+    }
+
+    //geolocation datasource is broken and doesn't update on change!
+
+    // PlasmaCore.DataSource {
+    //     id: geolocationDataSource
+    //     engine: "geolocation"
+    //     connectedSources: "location"
+    //     interval: 1000
+
+    //     onNewData:{
+    //         printDebug(data.DateTime)
+    //     }
+    // }
+
+    Timer {
+        id: timer
+        running: plasmoid.configuration.isAutoLocation
+        repeat: true
+        interval: 10 * 1000
+        onTriggered: {
+            printDebug(`[main|ipinfo|timer] TRIGGER FIRED ${new Date()}`)
+            API.getIpInfo()
+        }
+    }
+
+    PlasmaNM.NetworkStatus {
+        id: networkStatus
+
+        onActiveConnectionsChanged: {
+            printDebug("CONN")
+            API.getIpInfo()
+
+        }
     }
 
     onUnitsChoiceChanged: {
@@ -376,14 +416,36 @@ Item {
     }
 
     function getDisplayLocale() {
+        printDebug(`[main|getDisplayLocale] START`)
         var systemLocale = Qt.locale().uiLanguages[0]
         var testString = i18nc("Please put your language code here","en-US")
+
+        printDebug(`[main|getDisplayLocale] systemLocale: ${systemLocale}, testString: ${testString}`)
+        
         var hasTranslationForLocale = (testString === systemLocale ? true : false)
 
         if(hasTranslationForLocale) {
             return systemLocale;
         } else {
             return "en-US";
+        }
+    }
+
+    function printDebug(msg, file, func) {
+        var fileName = (file === undefined ? "n/a" : file);
+        var funcName = (func === undefined ? "n/a" : func);
+
+        if (plasmoid.configuration.logConsole) {
+            console.log(`[debug] [${fileName}|${funcName}]: ${msg}`);
+        };
+    }
+
+    function printDebugJSON(json, file, func) {
+        var fileName = (file === undefined ? "n/a" : file);
+        var funcName = (func === undefined ? "n/a" : func);
+
+        if (plasmoid.configuration.logConsole) {
+            console.log(`[debug] [${fileName}|${funcName}]: ${JSON.stringify(json)}`);
         }
     }
 
